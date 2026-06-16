@@ -14,6 +14,7 @@ export class User {
   @Column({ length: 128 })
   email: string;
 
+  @Index()
   @Column({ length: 128, nullable: true })
   username?: string;
 

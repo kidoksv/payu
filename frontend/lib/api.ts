@@ -27,9 +27,13 @@ adminApi.interceptors.request.use((config) => {
 });
 
 export const authApi = {
-  register: (email: string, password: string) => api.post<{ accessToken: string; tokenType: string }>('/auth/register', { email, password }).then((r) => r.data),
-  login: (email: string, password: string) => api.post<{ accessToken: string; tokenType: string }>('/auth/login', { email, password }).then((r) => r.data),
-  adminLogin: (email: string, password: string) => api.post<{ accessToken: string; tokenType: string }>('/admin/login', { email, password }).then((r) => r.data),
+  challenge: () => api.get<{ challengeId: string; question: string; expiresIn: number }>('/auth/register-challenge').then((r) => r.data),
+  register: (payload: { email: string; username: string; password: string; challengeId: string; challengeAnswer: string }) =>
+    api.post<{ accessToken: string; tokenType: string; user?: { email?: string; username?: string } }>('/auth/register', payload).then((r) => r.data),
+  login: (identifier: string, password: string) =>
+    api.post<{ accessToken: string; tokenType: string; user?: { email?: string; username?: string } }>('/auth/login', { identifier, password }).then((r) => r.data),
+  adminLogin: (identifier: string, password: string) =>
+    api.post<{ accessToken: string; tokenType: string; user?: { email?: string } }>('/admin/login', { identifier, password }).then((r) => r.data),
   changePassword: (oldPassword: string, newPassword: string) => api.patch('/auth/password', { oldPassword, newPassword }).then((r) => r.data)
 };
 

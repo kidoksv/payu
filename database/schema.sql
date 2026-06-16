@@ -10,7 +10,8 @@ CREATE TABLE users (
   last_login_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_users_status (status)
+  INDEX idx_users_status (status),
+  UNIQUE KEY uk_users_username (username)
 ) ENGINE=InnoDB;
 
 CREATE TABLE products (

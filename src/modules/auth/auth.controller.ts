@@ -1,4 +1,4 @@
-import { Body, Controller, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -7,6 +7,11 @@ import { ChangePasswordDto, LoginDto, RegisterDto } from './dto';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
+
+  @Get('register-challenge')
+  challenge() {
+    return this.auth.createRegisterChallenge();
+  }
 
   @Post('register')
   register(@Body() dto: RegisterDto) {

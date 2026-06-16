@@ -18,15 +18,25 @@ Base URL: `/api/v1`
 `POST /auth/register`
 
 ```json
-{ "email": "user@example.com", "password": "Password123!" }
+{
+  "email": "user@example.com",
+  "username": "payu_user",
+  "password": "Password123!",
+  "challengeId": "from GET /auth/register-challenge",
+  "challengeAnswer": "12"
+}
 ```
+
+Before registering, request a simple anti-abuse challenge:
+
+`GET /auth/register-challenge`
 
 ### Login
 
 `POST /auth/login`
 
 ```json
-{ "email": "user@example.com", "password": "Password123!" }
+{ "identifier": "user@example.com 或 payu_user", "password": "Password123!" }
 ```
 
 Response:
