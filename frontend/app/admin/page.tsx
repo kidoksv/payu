@@ -1,9 +1,10 @@
 'use client';
 
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Activity, Ban, CheckCircle2, DollarSign, Package, Users } from 'lucide-react';
+import { Activity, Ban, CheckCircle2, CreditCard, DollarSign, Package, Settings, Store, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, SectionTitle } from '@/components/ui/card';
 import { Input, Select } from '@/components/ui/input';
@@ -26,10 +27,13 @@ type ProductForm = {
   status: 'ACTIVE' | 'INACTIVE';
 };
 
+type AdminTab = 'dashboard' | 'products' | 'orders' | 'payments' | 'users' | 'settings';
+
 export default function AdminPage() {
   const adminToken = useAuthStore((s) => s.adminToken);
   const setAdminAuth = useAuthStore((s) => s.setAdminAuth);
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<AdminTab>('products');
   const loginForm = useForm({ defaultValues: { email: 'admin@example.com', password: '' } });
   const productForm = useForm<ProductForm>({
     defaultValues: { sku: '', name: '', description: '', price: '1.00', stock: 100, status: 'ACTIVE' }
@@ -78,13 +82,13 @@ export default function AdminPage() {
     onError: () => toast.error('商品保存失败，请检查权限或字段')
   });
 
-  const removeProduct = useMutation({
-    mutationFn: (id: number) => adminDataApi.deleteProduct(id),
+  const productStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'ACTIVE' | 'INACTIVE' }) => adminDataApi.updateProduct(id, { status }),
     onSuccess: () => {
-      toast.success('商品已下架');
+      toast.success('商品状态已更新');
       queryClient.invalidateQueries({ queryKey: ['admin-products'] });
     },
-    onError: () => toast.error('下架失败')
+    onError: () => toast.error('商品状态更新失败')
   });
 
   const orders = ordersQ.data || [];
@@ -98,6 +102,14 @@ export default function AdminPage() {
     [DollarSign, '今日支付金额', totalAmount.toFixed(2)],
     [Users, '在线用户', users.length],
     [CheckCircle2, '支付成功率', orders.length ? `${Math.round((paid / orders.length) * 100)}%` : '0%']
+  ];
+  const adminMenu: Array<[AdminTab, LucideIcon, string]> = [
+    ['dashboard', Activity, '仪表盘'],
+    ['products', Store, '商品管理'],
+    ['orders', Package, '订单管理'],
+    ['payments', CreditCard, '支付管理'],
+    ['users', Users, '用户管理'],
+    ['settings', Settings, '系统设置']
   ];
 
   const login = loginForm.handleSubmit(async (values) => {
@@ -129,38 +141,67 @@ export default function AdminPage() {
   return (
     <main className="mx-auto max-w-7xl px-4 py-10 md:px-6">
       <SectionTitle eyebrow="Admin Pro" title="管理后台" desc="订单、流水、商品和用户数据均来自真实后台 API。" />
-      <div className="grid gap-4 md:grid-cols-4">
-        {cards.map(([Icon, title, value]) => (
-          <Card key={title as string}>
-            <Icon className="mb-4 text-emerald-300" />
-            <p className="text-sm text-muted">{title as string}</p>
-            <div className="mt-2 text-3xl font-black">{value as string}</div>
-          </Card>
-        ))}
-      </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card><h2 className="mb-4 font-black">订单趋势</h2><OrderTrendChart orders={orders} /></Card>
-        <Card><h2 className="mb-4 font-black">收入趋势</h2><RevenueChart payments={payments} /></Card>
-        <Card><h2 className="mb-4 font-black">支付成功率</h2><SuccessRateChart orders={orders} /></Card>
-        <Card><h2 className="mb-4 font-black">商品销量排行</h2><ProductRankChart products={products} /></Card>
-      </div>
-      <section className="mt-8 grid gap-8">
-        <Card>
-          <h2 className="mb-4 flex items-center gap-2 text-xl font-black"><Package size={20} />订单管理</h2>
-          <DataTable>
-            <thead><tr><Th>订单号</Th><Th>金额</Th><Th>状态</Th><Th>地址</Th><Th>创建时间</Th></tr></thead>
-            <tbody>{orders.map((o) => <tr key={o.orderNo}><Td>{o.orderNo}</Td><Td>{money(o.payAmount)}</Td><Td><Badge tone={o.status === 'PAID' ? 'success' : 'warning'}>{o.status}</Badge></Td><Td>{shortHash(o.payAddress)}</Td><Td>{o.createdAt}</Td></tr>)}</tbody>
-          </DataTable>
+      <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <Card className="h-fit lg:sticky lg:top-24">
+          <div className="mb-4 text-sm font-black text-muted">后台模块</div>
+          <div className="grid gap-2">
+            {adminMenu.map(([key, Icon, label]) => (
+              <button
+                key={key}
+                className={`flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-black transition hover:bg-white/8 ${tab === key ? 'bg-emerald-400 text-slate-950' : ''}`}
+                onClick={() => setTab(key)}
+              >
+                <Icon size={18} />{label}
+              </button>
+            ))}
+          </div>
         </Card>
-        <Card>
-          <h2 className="mb-4 text-xl font-black">支付管理</h2>
-          <DataTable>
-            <thead><tr><Th>txid</Th><Th>金额</Th><Th>地址</Th><Th>状态</Th><Th>时间</Th></tr></thead>
-            <tbody>{payments.map((p) => <tr key={p.txid}><Td><a className="text-emerald-300" href={`https://tronscan.org/#/transaction/${p.txid}`} target="_blank">{shortHash(p.txid)}</a></Td><Td>{money(p.amount)}</Td><Td>{shortHash(p.toAddress)}</Td><Td>{p.status}</Td><Td>{p.createdAt}</Td></tr>)}</tbody>
-          </DataTable>
-        </Card>
-        <Card>
-          <h2 className="mb-4 text-xl font-black">商品管理</h2>
+
+        <section className="grid gap-6">
+          {tab === 'dashboard' ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-4">
+                {cards.map(([Icon, title, value]) => (
+                  <Card key={title}>
+                    <Icon className="mb-4 text-emerald-300" />
+                    <p className="text-sm text-muted">{title}</p>
+                    <div className="mt-2 text-3xl font-black">{value}</div>
+                  </Card>
+                ))}
+              </div>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Card><h2 className="mb-4 font-black">订单趋势</h2><OrderTrendChart orders={orders} /></Card>
+                <Card><h2 className="mb-4 font-black">收入趋势</h2><RevenueChart payments={payments} /></Card>
+                <Card><h2 className="mb-4 font-black">支付成功率</h2><SuccessRateChart orders={orders} /></Card>
+                <Card><h2 className="mb-4 font-black">商品销量排行</h2><ProductRankChart products={products} /></Card>
+              </div>
+            </>
+          ) : null}
+
+          {tab === 'orders' ? (
+            <Card>
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-black"><Package size={20} />订单管理</h2>
+              <DataTable>
+                <thead><tr><Th>订单号</Th><Th>金额</Th><Th>状态</Th><Th>地址</Th><Th>创建时间</Th></tr></thead>
+                <tbody>{orders.map((o) => <tr key={o.orderNo}><Td>{o.orderNo}</Td><Td>{money(o.payAmount)}</Td><Td><Badge tone={o.status === 'PAID' ? 'success' : 'warning'}>{o.status}</Badge></Td><Td>{shortHash(o.payAddress)}</Td><Td>{o.createdAt}</Td></tr>)}</tbody>
+              </DataTable>
+            </Card>
+          ) : null}
+
+          {tab === 'payments' ? (
+            <Card>
+              <h2 className="mb-4 text-xl font-black">支付管理</h2>
+              <DataTable>
+                <thead><tr><Th>txid</Th><Th>金额</Th><Th>地址</Th><Th>状态</Th><Th>时间</Th></tr></thead>
+                <tbody>{payments.map((p) => <tr key={p.txid}><Td><a className="text-emerald-300" href={`https://tronscan.org/#/transaction/${p.txid}`} target="_blank">{shortHash(p.txid)}</a></Td><Td>{money(p.amount)}</Td><Td>{shortHash(p.toAddress)}</Td><Td>{p.status}</Td><Td>{p.createdAt}</Td></tr>)}</tbody>
+              </DataTable>
+            </Card>
+          ) : null}
+
+          {tab === 'products' ? (
+            <Card>
+          <h2 className="mb-4 flex items-center gap-2 text-xl font-black"><Store size={20} />商品管理</h2>
+          <p className="mb-4 text-sm text-muted">这里是真实商品管理。修改价格、库存、上下架会直接写入后端数据库，用户商品页和下单金额会立即变化。</p>
           <form className="mb-5 grid gap-3 rounded-xl bg-white/6 p-4 md:grid-cols-6" onSubmit={productForm.handleSubmit((values) => saveProduct.mutate(values))}>
             <Input {...productForm.register('sku')} placeholder="SKU" disabled={Boolean(productForm.watch('id'))} />
             <Input {...productForm.register('name')} placeholder="商品名称" />
@@ -206,22 +247,41 @@ export default function AdminPage() {
                       >
                         编辑
                       </Button>
-                      <Button variant="danger" onClick={() => removeProduct.mutate(p.id)}>下架</Button>
+                      {p.status === 'ACTIVE' ? (
+                        <Button variant="danger" onClick={() => productStatus.mutate({ id: p.id, status: 'INACTIVE' })}>下架</Button>
+                      ) : (
+                        <Button onClick={() => productStatus.mutate({ id: p.id, status: 'ACTIVE' })}>上架</Button>
+                      )}
                     </div>
                   </Td>
                 </tr>
               ))}
             </tbody>
           </DataTable>
-        </Card>
-        <Card>
+            </Card>
+          ) : null}
+
+          {tab === 'users' ? (
+            <Card>
           <h2 className="mb-4 text-xl font-black">用户管理</h2>
           <DataTable>
             <thead><tr><Th>邮箱</Th><Th>状态</Th><Th>创建时间</Th><Th>操作</Th></tr></thead>
             <tbody>{users.map((u) => <tr key={u.id}><Td>{u.email}</Td><Td>{u.status}</Td><Td>{u.createdAt}</Td><Td><Button variant={u.status === 'ACTIVE' ? 'danger' : 'secondary'} onClick={() => userAction.mutate({ id: u.id, action: u.status === 'ACTIVE' ? 'freeze' : 'unfreeze' })}>{u.status === 'ACTIVE' ? <Ban size={15} /> : null}{u.status === 'ACTIVE' ? '封禁' : '解封'}</Button></Td></tr>)}</tbody>
           </DataTable>
-        </Card>
-      </section>
+            </Card>
+          ) : null}
+
+          {tab === 'settings' ? (
+            <Card>
+              <h2 className="text-xl font-black">系统设置</h2>
+              <div className="mt-4 grid gap-3 text-sm text-muted">
+                <div className="rounded-lg bg-white/6 p-4">网站配置、支付配置、邮件配置、公告管理需要后端配置表支撑。当前版本先保留入口，下一步可接入真实 settings 表。</div>
+                <div className="rounded-lg bg-white/6 p-4">支付地址当前来自 `.env` 的 DEFAULT_RECEIVE_ADDRESS，生产修改后需重启 API 服务。</div>
+              </div>
+            </Card>
+          ) : null}
+        </section>
+      </div>
     </main>
   );
 }
