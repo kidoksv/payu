@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth-store';
-import type { Order, Payment, Product, User } from './types';
+import type { Order, Payment, PaymentLog, Product, User } from './types';
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1',
@@ -57,6 +57,8 @@ export const paymentApi = {
 export const adminDataApi = {
   orders: () => adminApi.get<Order[]>('/admin/orders').then((r) => r.data),
   payments: () => adminApi.get<Payment[]>('/admin/payments').then((r) => r.data),
+  paymentLogs: () => adminApi.get<PaymentLog[]>('/admin/payment-logs').then((r) => r.data),
+  reconcilePayment: (payload: { txid?: string; address?: string; hours?: number }) => adminApi.post('/admin/payments/reconcile', payload).then((r) => r.data),
   users: () => adminApi.get<User[]>('/admin/users').then((r) => r.data),
   products: () => adminApi.get<Product[]>('/admin/products').then((r) => r.data),
   createProduct: (payload: { sku: string; name: string; description?: string; price: string; stock: number }) => adminApi.post<Product>('/products', payload).then((r) => r.data),

@@ -15,7 +15,7 @@ export class AdminSeeder implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const codes = ['order:read', 'payment:read', 'product:read', 'product:write', 'user:write', 'wallet:read'];
+    const codes = ['order:read', 'payment:read', 'payment:write', 'product:read', 'product:write', 'user:write', 'wallet:read'];
     const permissions = [];
     for (const code of codes) {
       let permission = await this.permissions.findOne({ where: { code } });

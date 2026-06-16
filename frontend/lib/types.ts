@@ -41,6 +41,17 @@ export type Payment = {
   createdAt: string;
 };
 
+export type PaymentLog = {
+  id: number;
+  orderId?: number;
+  txid?: string;
+  level: 'INFO' | 'WARN' | 'ERROR';
+  event: string;
+  message: string;
+  context?: unknown;
+  createdAt: string;
+};
+
 export type User = {
   id: number;
   email: string;

@@ -10,11 +10,13 @@ import { Payment } from '../../domain/payments/payment.entity';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { OrdersModule } from '../orders/orders.module';
+import { TronModule } from '../../infrastructure/tron/tron.module';
 import { AdminController } from './admin.controller';
 import { AdminSeeder } from './admin.seeder';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AdminUser, Role, Permission, User, Product, Order, Payment]), AuthModule, UsersModule, PaymentsModule],
+  imports: [TypeOrmModule.forFeature([AdminUser, Role, Permission, User, Product, Order, Payment]), AuthModule, UsersModule, PaymentsModule, OrdersModule, TronModule],
   controllers: [AdminController],
   providers: [AdminSeeder]
 })

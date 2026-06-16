@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthService } from '../auth/auth.service';
@@ -8,6 +9,8 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PaymentsService } from '../payments/payments.service';
 import { UsersService } from '../users/users.service';
+import { OrdersService } from '../orders/orders.service';
+import { TronService } from '../../infrastructure/tron/tron.service';
 import { Product } from '../../domain/products/product.entity';
 import { Order } from '../../domain/orders/order.entity';
 import { Payment } from '../../domain/payments/payment.entity';
@@ -18,6 +21,9 @@ export class AdminController {
     private readonly auth: AuthService,
     private readonly users: UsersService,
     private readonly payments: PaymentsService,
+    private readonly ordersService: OrdersService,
+    private readonly tron: TronService,
+    private readonly config: ConfigService,
     @InjectRepository(Order) private readonly orders: Repository<Order>,
     @InjectRepository(Payment) private readonly paymentRepo: Repository<Payment>,
     @InjectRepository(Product) private readonly products: Repository<Product>
@@ -47,6 +53,34 @@ export class AdminController {
   @Get('payment-logs')
   logs() {
     return this.payments.listLogs();
+  }
+
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @Permissions('payment:write')
+  @Post('payments/reconcile')
+  async reconcilePayment(@Body() dto: { txid?: string; address?: string; hours?: number }) {
+    const txid = String(dto.txid || '').trim();
+    if (txid) {
+      const transfer = await this.tron.getUsdtTransferByTxid(txid);
+      if (!transfer) throw new NotFoundException('txid not found or not a confirmed USDT TRC20 transfer');
+      const result = await this.payments.handleTransfer(transfer);
+      return { mode: 'txid', txid, transfer, result };
+    }
+
+    const hours = Math.min(168, Math.max(1, Number(dto.hours || 24)));
+    if (!Number.isFinite(hours)) throw new BadRequestException('invalid hours');
+    const address = String(dto.address || '').trim();
+    const defaultAddress = this.config.get<string>('defaultReceiveAddress')!;
+    const addresses = address ? [address] : await this.ordersService.getActivePayAddresses(defaultAddress);
+    const minTimestamp = Date.now() - hours * 60 * 60_000;
+    const results = [];
+    for (const item of addresses) {
+      const transfers = await this.tron.getUsdtTransfers(item, minTimestamp);
+      for (const transfer of transfers) {
+        results.push({ address: item, txid: transfer.txid, result: await this.payments.handleTransfer(transfer) });
+      }
+    }
+    return { mode: 'rescan', addresses, hours, scannedTransfers: results.length, results };
   }
 
   @UseGuards(JwtAuthGuard, PermissionsGuard)

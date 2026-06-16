@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Decimal from 'decimal.js';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Order, OrderStatus } from '../../domain/orders/order.entity';
 import { Product } from '../../domain/products/product.entity';
 import { Payment, PaymentStatus } from '../../domain/payments/payment.entity';
@@ -25,67 +25,96 @@ export class PaymentsService {
   ) {}
 
   async handleTransfer(transfer: Trc20Transfer) {
-    const minConfirmations = this.config.get<number>('minConfirmations') || 1;
     return this.ds.transaction(async (manager) => {
+      const paymentExists = await manager.findOne(Payment, { where: { txid: transfer.txid } });
+      if (paymentExists) {
+        await manager.save(
+          manager.create(PaymentLog, {
+            orderId: paymentExists.orderId,
+            txid: transfer.txid,
+            level: PaymentLogLevel.WARN,
+            event: 'DUPLICATE_TX',
+            message: 'duplicate confirmed payment ignored',
+            context: transfer
+          })
+        );
+        return { matched: true, duplicate: true, orderId: paymentExists.orderId };
+      }
+
       const txExists = await manager.exists(ChainTransaction, { where: { txid: transfer.txid } });
-      if (txExists) return this.log(PaymentLogLevel.WARN, 'DUPLICATE_TX', 'duplicate tx ignored', transfer);
-
-      await manager.save(
-        manager.create(ChainTransaction, {
-          txid: transfer.txid,
-          fromAddress: transfer.fromAddress,
-          toAddress: transfer.toAddress,
-          amount: transfer.amount,
-          blockNumber: transfer.blockNumber,
-          blockTimestamp: transfer.blockTimestamp,
-          rawJson: transfer.raw
-        })
-      );
-
-      const confirmations = minConfirmations;
-      const order = await manager.findOne(Order, {
-        where: { payAddress: transfer.toAddress, payAmount: new Decimal(transfer.amount).toFixed(2), status: In([OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED]) },
-        lock: { mode: 'pessimistic_write' }
-      });
-
-      if (!order) {
-        await manager.save(manager.create(PaymentLog, { txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'NO_MATCH', message: 'no pending order matched transfer amount', context: transfer }));
-        return { matched: false };
-      }
-      const transferTime = transfer.blockTimestamp || new Date();
-      if (order.expiresAt.getTime() < transferTime.getTime()) {
-        await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'EXPIRED_PAYMENT', message: 'transfer arrived after order expiration', context: transfer }));
-        return { matched: false };
-      }
-      if (!new Decimal(order.payAmount).equals(new Decimal(transfer.amount).toDecimalPlaces(2))) {
-        throw new BadRequestException('amount mismatch');
+      if (!txExists) {
+        await manager.save(
+          manager.create(ChainTransaction, {
+            txid: transfer.txid,
+            fromAddress: transfer.fromAddress,
+            toAddress: transfer.toAddress,
+            amount: transfer.amount,
+            blockNumber: transfer.blockNumber,
+            blockTimestamp: transfer.blockTimestamp,
+            rawJson: transfer.raw
+          })
+        );
+      } else {
+        await manager.save(
+          manager.create(PaymentLog, {
+            txid: transfer.txid,
+            level: PaymentLogLevel.INFO,
+            event: 'REPROCESS_TX',
+            message: 'existing chain transaction has no payment record, retrying order match',
+            context: transfer
+          })
+        );
       }
 
-      const payment = manager.create(Payment, {
-        orderId: order.id,
-        txid: transfer.txid,
-        fromAddress: transfer.fromAddress,
-        toAddress: transfer.toAddress,
-        amount: transfer.amount,
-        blockNumber: transfer.blockNumber,
-        confirmations,
-        status: confirmations >= minConfirmations ? PaymentStatus.CONFIRMED : PaymentStatus.PENDING,
-        paidAt: new Date()
-      });
-      await manager.save(payment);
-
-      if (order.status === OrderStatus.CANCELLED) {
-        await manager.decrement(Product, { id: order.productId }, 'stock', order.quantity);
-      }
-      order.status = OrderStatus.PAID;
-      order.paidAt = transferTime;
-      order.cancelledAt = undefined;
-      await manager.save(order);
-      await this.amounts.release(order.payAmount);
-      await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.INFO, event: 'PAYMENT_CONFIRMED', message: 'payment confirmed', context: transfer }));
-      this.logger.log(`order ${order.orderNo} paid by tx ${transfer.txid}`);
-      return { matched: true, orderNo: order.orderNo };
+      return this.confirmTransfer(manager, transfer);
     });
+  }
+
+  private async confirmTransfer(manager: EntityManager, transfer: Trc20Transfer) {
+    const minConfirmations = this.config.get<number>('minConfirmations') || 1;
+    const confirmations = minConfirmations;
+    const order = await manager.findOne(Order, {
+      where: { payAddress: transfer.toAddress, payAmount: new Decimal(transfer.amount).toFixed(2), status: In([OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED]) },
+      lock: { mode: 'pessimistic_write' }
+    });
+
+    if (!order) {
+      await manager.save(manager.create(PaymentLog, { txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'NO_MATCH', message: 'no pending order matched transfer amount', context: transfer }));
+      return { matched: false };
+    }
+    const transferTime = transfer.blockTimestamp || new Date();
+    if (order.expiresAt.getTime() < transferTime.getTime()) {
+      await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'EXPIRED_PAYMENT', message: 'transfer arrived after order expiration', context: transfer }));
+      return { matched: false };
+    }
+    if (!new Decimal(order.payAmount).equals(new Decimal(transfer.amount).toDecimalPlaces(2))) {
+      throw new BadRequestException('amount mismatch');
+    }
+
+    const payment = manager.create(Payment, {
+      orderId: order.id,
+      txid: transfer.txid,
+      fromAddress: transfer.fromAddress,
+      toAddress: transfer.toAddress,
+      amount: transfer.amount,
+      blockNumber: transfer.blockNumber,
+      confirmations,
+      status: confirmations >= minConfirmations ? PaymentStatus.CONFIRMED : PaymentStatus.PENDING,
+      paidAt: transferTime
+    });
+    await manager.save(payment);
+
+    if (order.status === OrderStatus.CANCELLED) {
+      await manager.decrement(Product, { id: order.productId }, 'stock', order.quantity);
+    }
+    order.status = OrderStatus.PAID;
+    order.paidAt = transferTime;
+    order.cancelledAt = undefined;
+    await manager.save(order);
+    await this.amounts.release(order.payAmount);
+    await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.INFO, event: 'PAYMENT_CONFIRMED', message: 'payment confirmed', context: transfer }));
+    this.logger.log(`order ${order.orderNo} paid by tx ${transfer.txid}`);
+    return { matched: true, orderNo: order.orderNo };
   }
 
   listByOrder(orderId: number) {
@@ -105,10 +134,5 @@ export class PaymentsService {
 
   listLogs() {
     return this.logs.find({ order: { id: 'DESC' }, take: 200 });
-  }
-
-  private async log(level: PaymentLogLevel, event: string, message: string, context: unknown) {
-    await this.logs.save(this.logs.create({ level, event, message, context }));
-    return { matched: false };
   }
 }

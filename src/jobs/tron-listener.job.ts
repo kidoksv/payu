@@ -30,6 +30,9 @@ export class TronListenerJob {
         const cursorKey = `tron:cursor:${address}`;
         const lastTs = Number((await this.redis.get(cursorKey)) || Date.now() - 24 * 60 * 60_000);
         const transfers = await this.tron.getUsdtTransfers(address, Math.max(0, lastTs - 120_000));
+        if (transfers.length > 0) {
+          this.logger.log(`found ${transfers.length} USDT transfers for ${address}`);
+        }
         let maxTs = lastTs;
         for (const transfer of transfers.sort((a, b) => (a.blockTimestamp?.getTime() || 0) - (b.blockTimestamp?.getTime() || 0))) {
           await this.payments.handleTransfer(transfer);

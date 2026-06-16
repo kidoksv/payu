@@ -4,7 +4,7 @@ import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { Activity, Ban, CheckCircle2, CreditCard, DollarSign, Package, Settings, Store, Users } from 'lucide-react';
+import { Activity, Ban, CheckCircle2, CreditCard, DollarSign, Package, RefreshCw, Settings, Store, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, SectionTitle } from '@/components/ui/card';
 import { Input, Select } from '@/components/ui/input';
@@ -34,14 +34,16 @@ export default function AdminPage() {
   const setAdminAuth = useAuthStore((s) => s.setAdminAuth);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<AdminTab>('products');
+  const [reconcileTxid, setReconcileTxid] = useState('');
   const loginForm = useForm({ defaultValues: { email: 'admin@example.com', password: '' } });
   const productForm = useForm<ProductForm>({
     defaultValues: { sku: '', name: '', description: '', price: '1.00', stock: 100, status: 'ACTIVE' }
   });
-  const [ordersQ, paymentsQ, productsQ, usersQ] = useQueries({
+  const [ordersQ, paymentsQ, paymentLogsQ, productsQ, usersQ] = useQueries({
     queries: [
       { queryKey: ['admin-orders'], queryFn: adminDataApi.orders, enabled: Boolean(adminToken) },
       { queryKey: ['admin-payments'], queryFn: adminDataApi.payments, enabled: Boolean(adminToken) },
+      { queryKey: ['admin-payment-logs'], queryFn: adminDataApi.paymentLogs, enabled: Boolean(adminToken) },
       { queryKey: ['admin-products'], queryFn: adminDataApi.products, enabled: Boolean(adminToken) },
       { queryKey: ['admin-users'], queryFn: adminDataApi.users, enabled: Boolean(adminToken) }
     ]
@@ -91,8 +93,22 @@ export default function AdminPage() {
     onError: () => toast.error('商品状态更新失败')
   });
 
+  const reconcilePayment = useMutation({
+    mutationFn: (txid: string) => adminDataApi.reconcilePayment({ txid }),
+    onSuccess: (data: { result?: { matched?: boolean; orderNo?: string } }) => {
+      const orderNo = data.result?.orderNo ? `：${data.result.orderNo}` : '';
+      toast.success(data.result?.matched ? `补单成功${orderNo}` : '已重扫该 txid，但没有匹配到订单');
+      setReconcileTxid('');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-payment-logs'] });
+    },
+    onError: () => toast.error('补单失败：请确认 txid 是已确认的 USDT TRC20 转账')
+  });
+
   const orders = ordersQ.data || [];
   const payments = paymentsQ.data || [];
+  const paymentLogs = paymentLogsQ.data || [];
   const products = productsQ.data || [];
   const users = usersQ.data || [];
   const paid = orders.filter((o) => ['PAID', 'SHIPPED', 'COMPLETED'].includes(o.status)).length;
@@ -191,10 +207,47 @@ export default function AdminPage() {
           {tab === 'payments' ? (
             <Card>
               <h2 className="mb-4 text-xl font-black">支付管理</h2>
-              <DataTable>
-                <thead><tr><Th>txid</Th><Th>金额</Th><Th>地址</Th><Th>状态</Th><Th>时间</Th></tr></thead>
-                <tbody>{payments.map((p) => <tr key={p.txid}><Td><a className="text-emerald-300" href={`https://tronscan.org/#/transaction/${p.txid}`} target="_blank">{shortHash(p.txid)}</a></Td><Td>{money(p.amount)}</Td><Td>{shortHash(p.toAddress)}</Td><Td>{p.status}</Td><Td>{p.createdAt}</Td></tr>)}</tbody>
-              </DataTable>
+              <form
+                className="mb-5 grid gap-3 rounded-xl bg-white/6 p-4 md:grid-cols-[1fr_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const txid = reconcileTxid.trim();
+                  if (!txid) return toast.error('请输入 Tronscan 上的 txid');
+                  reconcilePayment.mutate(txid);
+                }}
+              >
+                <Input value={reconcileTxid} onChange={(event) => setReconcileTxid(event.target.value)} placeholder="输入已支付的 txid，手动查询链上并补单" />
+                <Button disabled={reconcilePayment.isPending}>
+                  <RefreshCw size={16} />{reconcilePayment.isPending ? '补单中' : '手动补单'}
+                </Button>
+              </form>
+              <div className="grid gap-6">
+                <div>
+                  <h3 className="mb-3 font-black">链上支付流水</h3>
+                  <DataTable>
+                    <thead><tr><Th>txid</Th><Th>金额</Th><Th>地址</Th><Th>状态</Th><Th>支付时间</Th></tr></thead>
+                    <tbody>{payments.map((p) => <tr key={p.txid}><Td><a className="text-emerald-300" href={`https://tronscan.org/#/transaction/${p.txid}`} target="_blank">{shortHash(p.txid)}</a></Td><Td>{money(p.amount)}</Td><Td>{shortHash(p.toAddress)}</Td><Td>{p.status}</Td><Td>{p.paidAt || p.createdAt}</Td></tr>)}</tbody>
+                  </DataTable>
+                </div>
+                <div>
+                  <h3 className="mb-3 font-black">异常与补单日志</h3>
+                  <DataTable>
+                    <thead><tr><Th>级别</Th><Th>事件</Th><Th>订单</Th><Th>txid</Th><Th>说明</Th><Th>时间</Th></tr></thead>
+                    <tbody>
+                      {paymentLogs.map((log) => (
+                        <tr key={log.id}>
+                          <Td><Badge tone={log.level === 'INFO' ? 'success' : log.level === 'WARN' ? 'warning' : 'danger'}>{log.level}</Badge></Td>
+                          <Td>{log.event}</Td>
+                          <Td>{log.orderId || '-'}</Td>
+                          <Td>{log.txid ? <a className="text-emerald-300" href={`https://tronscan.org/#/transaction/${log.txid}`} target="_blank">{shortHash(log.txid)}</a> : '-'}</Td>
+                          <Td>{log.message}</Td>
+                          <Td>{log.createdAt}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </DataTable>
+                </div>
+              </div>
             </Card>
           ) : null}
 
