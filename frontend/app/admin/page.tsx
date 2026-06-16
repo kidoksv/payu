@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Activity, Ban, CheckCircle2, DollarSign, Package, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, SectionTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { DataTable, Td, Th } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -16,11 +16,24 @@ import { money, shortHash } from '@/lib/utils';
 import { OrderTrendChart, ProductRankChart, RevenueChart, SuccessRateChart } from '@/components/charts/dashboard-charts';
 import type { LucideIcon } from 'lucide-react';
 
+type ProductForm = {
+  id?: number;
+  sku: string;
+  name: string;
+  description: string;
+  price: string;
+  stock: number;
+  status: 'ACTIVE' | 'INACTIVE';
+};
+
 export default function AdminPage() {
   const adminToken = useAuthStore((s) => s.adminToken);
   const setAdminAuth = useAuthStore((s) => s.setAdminAuth);
   const queryClient = useQueryClient();
   const loginForm = useForm({ defaultValues: { email: 'admin@example.com', password: '' } });
+  const productForm = useForm<ProductForm>({
+    defaultValues: { sku: '', name: '', description: '', price: '1.00', stock: 100, status: 'ACTIVE' }
+  });
   const [ordersQ, paymentsQ, productsQ, usersQ] = useQueries({
     queries: [
       { queryKey: ['admin-orders'], queryFn: adminDataApi.orders, enabled: Boolean(adminToken) },
@@ -36,6 +49,42 @@ export default function AdminPage() {
       toast.success('操作成功');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     }
+  });
+
+  const saveProduct = useMutation({
+    mutationFn: (values: ProductForm) => {
+      if (values.id) {
+        return adminDataApi.updateProduct(values.id, {
+          name: values.name,
+          description: values.description,
+          price: values.price,
+          stock: Number(values.stock),
+          status: values.status
+        });
+      }
+      return adminDataApi.createProduct({
+        sku: values.sku,
+        name: values.name,
+        description: values.description,
+        price: values.price,
+        stock: Number(values.stock)
+      });
+    },
+    onSuccess: () => {
+      toast.success('商品已保存');
+      productForm.reset({ sku: '', name: '', description: '', price: '1.00', stock: 100, status: 'ACTIVE' });
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+    },
+    onError: () => toast.error('商品保存失败，请检查权限或字段')
+  });
+
+  const removeProduct = useMutation({
+    mutationFn: (id: number) => adminDataApi.deleteProduct(id),
+    onSuccess: () => {
+      toast.success('商品已下架');
+      queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+    },
+    onError: () => toast.error('下架失败')
   });
 
   const orders = ordersQ.data || [];
@@ -112,9 +161,57 @@ export default function AdminPage() {
         </Card>
         <Card>
           <h2 className="mb-4 text-xl font-black">商品管理</h2>
+          <form className="mb-5 grid gap-3 rounded-xl bg-white/6 p-4 md:grid-cols-6" onSubmit={productForm.handleSubmit((values) => saveProduct.mutate(values))}>
+            <Input {...productForm.register('sku')} placeholder="SKU" disabled={Boolean(productForm.watch('id'))} />
+            <Input {...productForm.register('name')} placeholder="商品名称" />
+            <Input {...productForm.register('price')} placeholder="价格 USDT" />
+            <Input {...productForm.register('stock', { valueAsNumber: true })} type="number" placeholder="库存" />
+            <Select {...productForm.register('status')}>
+              <option value="ACTIVE">上架</option>
+              <option value="INACTIVE">下架</option>
+            </Select>
+            <Button disabled={saveProduct.isPending}>{productForm.watch('id') ? '保存修改' : '新增商品'}</Button>
+            <Input className="md:col-span-5" {...productForm.register('description')} placeholder="商品描述" />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => productForm.reset({ sku: '', name: '', description: '', price: '1.00', stock: 100, status: 'ACTIVE' })}
+            >
+              清空
+            </Button>
+          </form>
           <DataTable>
-            <thead><tr><Th>SKU</Th><Th>名称</Th><Th>价格</Th><Th>库存</Th><Th>状态</Th></tr></thead>
-            <tbody>{products.map((p) => <tr key={p.id}><Td>{p.sku}</Td><Td>{p.name}</Td><Td>{money(p.price)}</Td><Td>{p.stock}</Td><Td>{p.status}</Td></tr>)}</tbody>
+            <thead><tr><Th>SKU</Th><Th>名称</Th><Th>价格</Th><Th>库存</Th><Th>状态</Th><Th>操作</Th></tr></thead>
+            <tbody>
+              {products.map((p) => (
+                <tr key={p.id}>
+                  <Td>{p.sku}</Td>
+                  <Td>{p.name}</Td>
+                  <Td>{money(p.price)}</Td>
+                  <Td>{p.stock}</Td>
+                  <Td><Badge tone={p.status === 'ACTIVE' ? 'success' : 'danger'}>{p.status}</Badge></Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        onClick={() => productForm.reset({
+                          id: p.id,
+                          sku: p.sku,
+                          name: p.name,
+                          description: p.description || '',
+                          price: Number(p.price).toFixed(2),
+                          stock: p.stock,
+                          status: p.status
+                        })}
+                      >
+                        编辑
+                      </Button>
+                      <Button variant="danger" onClick={() => removeProduct.mutate(p.id)}>下架</Button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
           </DataTable>
         </Card>
         <Card>

@@ -14,6 +14,11 @@ export class OrdersController {
     return this.orders.create(user.id, dto);
   }
 
+  @Get()
+  list(@CurrentUser() user: { id: number }) {
+    return this.orders.listForUser(user.id);
+  }
+
   @Get(':id')
   detail(@CurrentUser() user: { id: number }, @Param('id') id: string) {
     return this.orders.getForUser(user.id, Number(id));

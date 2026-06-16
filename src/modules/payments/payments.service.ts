@@ -19,7 +19,8 @@ export class PaymentsService {
     private readonly config: ConfigService,
     private readonly amounts: UniqueAmountService,
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
-    @InjectRepository(PaymentLog) private readonly logs: Repository<PaymentLog>
+    @InjectRepository(PaymentLog) private readonly logs: Repository<PaymentLog>,
+    @InjectRepository(Order) private readonly orders: Repository<Order>
   ) {}
 
   async handleTransfer(transfer: Trc20Transfer) {
@@ -83,6 +84,17 @@ export class PaymentsService {
 
   listByOrder(orderId: number) {
     return this.payments.find({ where: { orderId }, order: { id: 'DESC' } });
+  }
+
+  async listForUser(userId: number) {
+    const orders = await this.orders.find({ where: { userId }, select: ['id'] });
+    if (!orders.length) return [];
+    return this.payments
+      .createQueryBuilder('payment')
+      .where('payment.order_id IN (:...ids)', { ids: orders.map((order) => order.id) })
+      .orderBy('payment.id', 'DESC')
+      .limit(100)
+      .getMany();
   }
 
   listLogs() {

@@ -56,6 +56,10 @@ export class OrdersService {
     return order;
   }
 
+  listForUser(userId: number) {
+    return this.orders.find({ where: { userId }, order: { id: 'DESC' }, take: 100 });
+  }
+
   async getPaymentStatus(userId: number, orderNo: string) {
     const order = await this.orders.findOne({ where: { orderNo, userId } });
     if (!order) throw new NotFoundException('order not found');
