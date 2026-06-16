@@ -1,0 +1,155 @@
+CREATE DATABASE IF NOT EXISTS payment_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE payment_db;
+
+CREATE TABLE users (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  email VARCHAR(128) NOT NULL UNIQUE,
+  username VARCHAR(128) NULL,
+  password_hash VARCHAR(128) NOT NULL,
+  status ENUM('ACTIVE','FROZEN') NOT NULL DEFAULT 'ACTIVE',
+  last_login_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_users_status (status)
+) ENGINE=InnoDB;
+
+CREATE TABLE products (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(128) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  price DECIMAL(20,6) NOT NULL,
+  stock INT NOT NULL DEFAULT 0,
+  status ENUM('ACTIVE','INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_products_sku (sku),
+  INDEX idx_products_status (status)
+) ENGINE=InnoDB;
+
+CREATE TABLE orders (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  order_no VARCHAR(32) NOT NULL UNIQUE,
+  user_id BIGINT UNSIGNED NOT NULL,
+  product_id BIGINT UNSIGNED NOT NULL,
+  quantity INT NOT NULL,
+  product_amount DECIMAL(20,6) NOT NULL,
+  pay_amount DECIMAL(20,6) NOT NULL,
+  pay_address VARCHAR(64) NOT NULL,
+  status ENUM('PENDING_PAYMENT','PAID','SHIPPED','COMPLETED','CANCELLED') NOT NULL DEFAULT 'PENDING_PAYMENT',
+  paid_at DATETIME NULL,
+  shipped_at DATETIME NULL,
+  completed_at DATETIME NULL,
+  cancelled_at DATETIME NULL,
+  expires_at DATETIME NOT NULL,
+  qr_code_data_url MEDIUMTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_orders_user (user_id),
+  INDEX idx_orders_product (product_id),
+  INDEX idx_orders_status_expires (status, expires_at),
+  INDEX idx_orders_pay_match (pay_address, pay_amount, status),
+  CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_orders_product FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE payments (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT UNSIGNED NOT NULL,
+  txid VARCHAR(128) NOT NULL UNIQUE,
+  from_address VARCHAR(64) NOT NULL,
+  to_address VARCHAR(64) NOT NULL,
+  amount DECIMAL(20,6) NOT NULL,
+  block_number BIGINT NULL,
+  confirmations INT NOT NULL DEFAULT 0,
+  status ENUM('PENDING','CONFIRMED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  paid_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_payments_order (order_id),
+  INDEX idx_payments_status (status),
+  CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES orders(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE wallets (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  mode ENUM('SINGLE','ADDRESS_POOL','HD') NOT NULL DEFAULT 'SINGLE',
+  address VARCHAR(64) NOT NULL UNIQUE,
+  derivation_path VARCHAR(128) NULL,
+  assigned_order_id BIGINT UNSIGNED NULL,
+  status ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_wallets_mode_status (mode, status)
+) ENGINE=InnoDB;
+
+CREATE TABLE transactions (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  txid VARCHAR(128) NOT NULL UNIQUE,
+  to_address VARCHAR(64) NOT NULL,
+  from_address VARCHAR(64) NOT NULL,
+  amount DECIMAL(20,6) NOT NULL,
+  block_number BIGINT NULL,
+  block_timestamp DATETIME NULL,
+  raw_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_transactions_to_address (to_address)
+) ENGINE=InnoDB;
+
+CREATE TABLE payment_logs (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT UNSIGNED NULL,
+  txid VARCHAR(128) NULL,
+  level ENUM('INFO','WARN','ERROR') NOT NULL DEFAULT 'INFO',
+  event VARCHAR(64) NOT NULL,
+  message TEXT NOT NULL,
+  context JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_payment_logs_order (order_id),
+  INDEX idx_payment_logs_txid (txid)
+) ENGINE=InnoDB;
+
+CREATE TABLE permissions (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(128) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE roles (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE role_permissions (
+  role_id BIGINT UNSIGNED NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (role_id, permission_id),
+  CONSTRAINT fk_rp_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+  CONSTRAINT fk_rp_permission FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE admin_users (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  email VARCHAR(128) NOT NULL UNIQUE,
+  password_hash VARCHAR(128) NOT NULL,
+  status ENUM('ACTIVE','FROZEN') NOT NULL DEFAULT 'ACTIVE',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE admin_user_roles (
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (admin_user_id, role_id),
+  CONSTRAINT fk_aur_admin FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_aur_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+INSERT INTO wallets(mode, address, status)
+VALUES ('SINGLE', 'TWEaLoQqKWnxdvARfULsm9R94bKk3rnWis', 'ACTIVE')
+ON DUPLICATE KEY UPDATE status='ACTIVE';
+
+INSERT INTO products(sku, name, description, price, stock, status)
+VALUES ('VIRTUAL-001', 'Virtual Product Demo', 'Demo virtual goods item', 100.00, 10000, 'ACTIVE')
+ON DUPLICATE KEY UPDATE stock=stock;
