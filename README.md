@@ -33,6 +33,10 @@ docker compose up -d --build
 
 服务地址：`http://localhost/api/v1`
 
+前端站点：`http://localhost`
+
+API 仍然通过：`http://localhost/api/v1`
+
 没有 Docker 时也可以手动准备 MySQL/Redis 后运行：
 
 ```bash
@@ -46,6 +50,24 @@ npm start
 ```bash
 BASE_URL=http://localhost:3000/api/v1 ./scripts/smoke-test.sh
 ```
+
+## 前端
+
+前端位于 `frontend/`，技术栈为 Next.js 15、React 19、TailwindCSS、TanStack Query、Zustand、Framer Motion、Chart.js。
+
+本地开发：
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+Docker Compose 会自动启动 `frontend` 服务，Nginx 路由如下：
+
+- `/` -> Next.js 前端
+- `/api/` -> NestJS 后端
 
 ## 生产配置
 

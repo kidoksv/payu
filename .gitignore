@@ -1,5 +1,8 @@
 node_modules/
 dist/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
 .env
 .DS_Store
 npm-debug.log*
