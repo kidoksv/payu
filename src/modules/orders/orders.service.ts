@@ -60,6 +60,17 @@ export class OrdersService {
     return this.orders.find({ where: { userId }, order: { id: 'DESC' }, take: 100 });
   }
 
+  async getActivePayAddresses(defaultAddress: string) {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60_000);
+    const rows = await this.orders
+      .createQueryBuilder('o')
+      .select('DISTINCT o.pay_address', 'address')
+      .where('o.status IN (:...statuses)', { statuses: [OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED] })
+      .andWhere('o.expires_at >= :cutoff', { cutoff })
+      .getRawMany<{ address: string }>();
+    return Array.from(new Set([defaultAddress, ...rows.map((row) => row.address)].filter(Boolean)));
+  }
+
   async getPaymentStatus(userId: number, orderNo: string) {
     const order = await this.orders.findOne({ where: { orderNo, userId } });
     if (!order) throw new NotFoundException('order not found');

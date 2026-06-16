@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import Decimal from 'decimal.js';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Order, OrderStatus } from '../../domain/orders/order.entity';
+import { Product } from '../../domain/products/product.entity';
 import { Payment, PaymentStatus } from '../../domain/payments/payment.entity';
 import { PaymentLog, PaymentLogLevel } from '../../domain/payments/payment-log.entity';
 import { ChainTransaction } from '../../domain/payments/transaction.entity';
@@ -43,7 +44,7 @@ export class PaymentsService {
 
       const confirmations = minConfirmations;
       const order = await manager.findOne(Order, {
-        where: { payAddress: transfer.toAddress, payAmount: new Decimal(transfer.amount).toFixed(2), status: OrderStatus.PENDING_PAYMENT },
+        where: { payAddress: transfer.toAddress, payAmount: new Decimal(transfer.amount).toFixed(2), status: In([OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED]) },
         lock: { mode: 'pessimistic_write' }
       });
 
@@ -51,7 +52,8 @@ export class PaymentsService {
         await manager.save(manager.create(PaymentLog, { txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'NO_MATCH', message: 'no pending order matched transfer amount', context: transfer }));
         return { matched: false };
       }
-      if (order.expiresAt.getTime() < Date.now()) {
+      const transferTime = transfer.blockTimestamp || new Date();
+      if (order.expiresAt.getTime() < transferTime.getTime()) {
         await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.WARN, event: 'EXPIRED_PAYMENT', message: 'transfer arrived after order expiration', context: transfer }));
         return { matched: false };
       }
@@ -72,8 +74,12 @@ export class PaymentsService {
       });
       await manager.save(payment);
 
+      if (order.status === OrderStatus.CANCELLED) {
+        await manager.decrement(Product, { id: order.productId }, 'stock', order.quantity);
+      }
       order.status = OrderStatus.PAID;
-      order.paidAt = new Date();
+      order.paidAt = transferTime;
+      order.cancelledAt = undefined;
       await manager.save(order);
       await this.amounts.release(order.payAmount);
       await manager.save(manager.create(PaymentLog, { orderId: order.id, txid: transfer.txid, level: PaymentLogLevel.INFO, event: 'PAYMENT_CONFIRMED', message: 'payment confirmed', context: transfer }));
