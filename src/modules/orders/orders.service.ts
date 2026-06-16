@@ -59,7 +59,16 @@ export class OrdersService {
   async getPaymentStatus(userId: number, orderNo: string) {
     const order = await this.orders.findOne({ where: { orderNo, userId } });
     if (!order) throw new NotFoundException('order not found');
-    return { orderNo: order.orderNo, status: order.status, payAmount: order.payAmount, payAddress: order.payAddress, expiresAt: order.expiresAt };
+    return {
+      id: order.id,
+      orderNo: order.orderNo,
+      status: order.status,
+      payAmount: order.payAmount,
+      payAddress: order.payAddress,
+      qrCodeDataUrl: order.qrCodeDataUrl,
+      expiresAt: order.expiresAt,
+      paidAt: order.paidAt
+    };
   }
 
   async cancelExpired() {

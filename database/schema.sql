@@ -151,5 +151,5 @@ VALUES ('SINGLE', 'TWEaLoQqKWnxdvARfULsm9R94bKk3rnWis', 'ACTIVE')
 ON DUPLICATE KEY UPDATE status='ACTIVE';
 
 INSERT INTO products(sku, name, description, price, stock, status)
-VALUES ('VIRTUAL-001', 'Virtual Product Demo', 'Demo virtual goods item', 100.00, 10000, 'ACTIVE')
-ON DUPLICATE KEY UPDATE stock=stock;
+VALUES ('VIRTUAL-001', 'Virtual Product Demo', 'Demo virtual goods item', 1.00, 10000, 'ACTIVE')
+ON DUPLICATE KEY UPDATE price=VALUES(price), stock=stock;

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -45,7 +46,7 @@ export default function RegisterPage() {
         <form className="mt-6 grid gap-4" onSubmit={submit}>
           <label className="grid gap-2 text-sm font-bold">邮箱<Input {...register('email')} /></label>
           <label className="grid gap-2 text-sm font-bold">用户名<Input {...register('username')} placeholder="预留字段" /></label>
-          <label className="grid gap-2 text-sm font-bold">密码<Input {...register('password')} type="password" /></label>
+          <label className="grid gap-2 text-sm font-bold">密码<PasswordInput {...register('password')} placeholder="至少8位，包含大小写和数字" /></label>
           <div className="grid grid-cols-4 gap-2">{[1, 2, 3, 4].map((i) => <span key={i} className={`h-2 rounded ${strength >= i ? 'bg-emerald-300' : 'bg-white/10'}`} />)}</div>
           <label className="grid gap-2 text-sm font-bold">图形验证码<Input {...register('captcha')} /></label>
           <Button disabled={formState.isSubmitting}>注册</Button>

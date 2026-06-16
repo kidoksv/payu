@@ -7,6 +7,7 @@ import { Activity, Ban, CheckCircle2, DollarSign, Package, Users } from 'lucide-
 import { Button } from '@/components/ui/button';
 import { Card, SectionTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { DataTable, Td, Th } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { authApi, adminDataApi } from '@/lib/api';
@@ -68,7 +69,7 @@ export default function AdminPage() {
           <p className="mt-2 text-sm text-muted">请输入 `.env` 中配置的管理员账号。</p>
           <form className="mt-6 grid gap-4" onSubmit={login}>
             <Input {...loginForm.register('email')} placeholder="admin@example.com" />
-            <Input {...loginForm.register('password')} type="password" placeholder="管理员密码" />
+            <PasswordInput {...loginForm.register('password')} placeholder="管理员密码" />
             <Button>登录后台</Button>
           </form>
         </Card>
